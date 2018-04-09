@@ -7,11 +7,11 @@
 #'   toc_float: true
 #' ---
 
-#+ comment="",cache=FALSE,message=FALSE,warning=FALSE,echo=TRUE
+#+ comment="",cache=FALSE,message=FALSE,warning=FALSE,echo=FALSE
 rm(list=ls()) # clear all
 library(knitr)
 
-opts_chunk$set(comment="",cache=FALSE,message=FALSE,warning=FALSE,echo=TRUE)
+opts_chunk$set(comment="",cache=FALSE,message=FALSE,warning=FALSE,echo=FALSE)
 # load all required packages
 library(caret)
 library(ggplot2)
@@ -1194,8 +1194,9 @@ tabp<-2*pnorm(-abs(tabz))
 tab<-cbind(tab,p.val=tabp)
 kable(tab)
 
+#' Combined graph
 #+ fig.with=5,fig.height=10
 grid.arrange(pd.os,pd.wt,pd.chao,nrow=3)
 
-
+#' R session information
 sessionInfo()
