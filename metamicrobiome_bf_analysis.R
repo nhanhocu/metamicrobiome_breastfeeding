@@ -316,13 +316,62 @@ colnames(harvardmap)<-tolower(colnames(harvardmap))
 # Concatenate  use g__ for l6 only
 haitil6<-colnames(haiti_mapping.complete_l6)[grep("g__",colnames(haiti_mapping.complete_l6))]
 rml6<-colnames(subramanian_et_al_mapping_file_l6)[grep("g__",colnames(subramanian_et_al_mapping_file_l6))]
-uncl6<-colnames(dat.unc$unc_otu_table_mc2_w_tax_no_pynast_failures_l6)[grep("g__",colnames(dat.unc$unc_otu_table_mc2_w_tax_no_pynast_failures_l6))]
+uncl6<-colnames(dat.unc$unc_mapping_fileall_l6)[grep("g__",colnames(dat.unc$unc_mapping_fileall_l6))]
 uwl6<-colnames(hj_feeding_mapping_bpb_4nhan_l6)[grep("g__",colnames(hj_feeding_mapping_bpb_4nhan_l6))]
 usbmkl6<-colnames(usbmk_mapping_122414.filtered.with_pairing_status_l6)[grep("g__",colnames(usbmk_mapping_122414.filtered.with_pairing_status_l6))]
 havardl6<-colnames(final_map_l6)[grep("g__",colnames(final_map_l6))]
 canadal6<-colnames(ca$rel_abund_bjog)[grep("g__",colnames(ca$rel_abund_bjog))]
 #taxa in all 7 studies
 taxshare<-uwl6[(uwl6 %in% uncl6) & (uwl6 %in% rml6) & (uwl6 %in% usbmkl6) & (uwl6 %in% haitil6) &(uwl6 %in% havardl6)&(uwl6 %in% canadal6)]
+
+
+#CLR transformation (for reviewer's comments)
+# replacement of zero-values
+library(compositions)
+library(zCompositions)
+dclr.rml6<-subramanian_et_al_mapping_file_l6[,c("study",tolower(colnames(rmmap)),rml6)] #
+clrr<-function(x){as.data.frame(clr(x))}
+test<-dclr.rml6[,taxshare]#rml6
+#test0<-lrEM(test,label=0,dl=rep(1,ncol(test)),ini.cov="multRepl") # not work as no complete column (same for lrDA)
+test0<-multLN(test,label=0,dl=rep(1,ncol(test)))
+clrdat<-as.data.frame(clr(test0))
+#clrdat<-NULL
+#for (i in 1:nrow(test0)){
+#  clrdat<-rbind(clrdat, clrr(test0[i,]))
+#}
+dclr.rml6[,taxshare]<-clrdat #rml6
+dclr.rml6s<-dclr.rml6[,c("study",tolower(colnames(rmmap)),taxshare)]
+SinTrain<-as.character(dclr.rml6s$x.sampleid[dclr.rml6s$ena.libraryname=="BANG_HLTHY" &dclr.rml6s$health_analysis_groups=="Healthy Singletons"])
+#testing data Bangladesh study
+SinTest<-as.character(dclr.rml6s$x.sampleid[dclr.rml6s$ena.libraryname!="BANG_HLTHY" & (dclr.rml6s$health_analysis_groups=="Healthy Singletons" | dclr.rml6s$health_analysis_groups=="Healthy Twins Triplets") |dclr.rml6s$health_analysis_groups=="Severe Acute Malnutrition Study"])
+Sage<-dclr.rml6s$age_in_months
+names(Sage)<-dclr.rml6s$x.sampleid
+SdataMatrix <- cbind(Sage, dclr.rml6s[,taxshare])
+Straining<-SdataMatrix[SinTrain,]
+Stesting<-SdataMatrix[SinTest,]
+#randomForest
+library(caret)
+set.seed(123)
+SrfFit.rml6.share.clr <- train(Sage ~ ., data = Straining, method = "rf",preProc = "center", proximity = TRUE)
+#save(dclr.rml6s,SrfFit.rml6.share.clr,Straining,Stesting,taxshare,file="C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/SrfFit.rml6.share.clr.rda")
+#predict on Bangladesh test data
+testage <- predict(SrfFit.rml6.share.clr, newdata = Stesting)
+testdat1<-cbind(sampleid=rownames(Stesting),age.sample=Stesting[,"Sage"],age.predicted=testage)
+testdat2<-merge(testdat1,dclr.rml6s, by.x="sampleid",by.y="x.sampleid")
+testdat2[,c("age.sample","age.predicted")]<-lapply(testdat2[,c("age.sample","age.predicted")],as.character)
+testdat2[,c("age.sample","age.predicted")]<-lapply(testdat2[,c("age.sample","age.predicted")],as.numeric)
+ggplot() +geom_point(data=testdat2,aes(x=age.sample, y=age.predicted, colour=health_analysis_groups))
+samhe<-merge(samde,he50[,c("child.id","gender","month.exbf","month.food")],by="child.id")
+testdat3<-merge(samhe,testdat2,by.y="sampleid",by.x="fecal.sample.id")
+ggplot() +geom_point(data=testdat3,aes(x=age.sample, y=age.predicted, colour=bf))
+rmdat.rm<-testdat3
+rmdat.rm$bf<-factor(rmdat.rm$bf, levels=c("ExclusiveBF","Non_exclusiveBF","No_BF"))
+rmdat.rm$personid<-paste("rm",as.factor(tolower(rmdat.rm$personid)),sep=".")
+rmdat.rm$sampleid<-paste("rm",tolower(rmdat.rm$fecal.sample.id),sep=".")
+rmdat.rm$author<-"Subramanian et al"
+rmdat.rm$pop<-"Bangladesh"
+rmdat.rm$year<-"2014"
+
 
 
 # fit RF model in rm data with taxshare and predict in other data
@@ -2088,6 +2137,24 @@ metatab.zi.nohav<-meta.taxa(taxcomdat=taxacom.zi.nohav, sm="RR",p.adjust.method=
 #save(taxacom.zi.nohav,metatab.zi.nohav,file="C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/metatab.zi.nohav7.rda")
 
 
+# meta-analysis for 4 studies with gender info but not adjusting for gender (only age): for comparison
+load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.basic.rm.rda")
+load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.basic.ha.rda")
+load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.basic.usbmk.rda")
+load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.basic.unc2.rda")
+taxacom.zi.l2<-rbind.fill(taxacom.zi.rm$l2,taxacom.zi.ha$l2,taxacom.zi.unc$l2,taxacom.zi.usbmk$l2)
+taxacom.zi.l3<-rbind.fill(taxacom.zi.rm$l3,taxacom.zi.ha$l3,taxacom.zi.unc$l3,taxacom.zi.usbmk$l3)
+taxacom.zi.l4<-rbind.fill(taxacom.zi.rm$l4,taxacom.zi.ha$l4,taxacom.zi.unc$l4,taxacom.zi.usbmk$l4)
+taxacom.zi.l5<-rbind.fill(taxacom.zi.rm$l5,taxacom.zi.ha$l5,taxacom.zi.unc$l5,taxacom.zi.usbmk$l5)
+taxacom.zi.l6<-rbind.fill(taxacom.zi.rm$l6,taxacom.zi.ha$l6,taxacom.zi.unc$l6,taxacom.zi.usbmk$l6)
+taxacom.zi.4com<-list(taxacom.zi.l2,taxacom.zi.l3,taxacom.zi.l4,taxacom.zi.l5,taxacom.zi.l6)
+names(taxacom.zi.4com)<-paste("l",2:6,sep="")
+# metaanalysis for gamlss
+metatab.zi.4com<-meta.taxa(taxcomdat=taxacom.zi.4com, sm="RR",p.adjust.method="fdr",percent.meta=0.5)
+#save(metatab.zi.4com,taxacom.zi.4com,file="C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/metatab.zi.4com.rda")
+
+
+
 # gender adjusted for bf and age
 print(load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.rm.sex.adjustbfage.rda"))
 print(load("C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/taxacom.ha.sex.adjustbfage.rda"))
@@ -2661,6 +2728,8 @@ for (i in 1: length(names(taxacom.zi.ha))){
   taxacom.zi.ha[[i]][,'pop']<-"Haiti"
 }
 # UNC
+#fix names
+names(pathcom.unc.rel.gamlss)<-c("l1","l2","l3")
 taxacom.zi.unc<-pathcom.unc.rel.gamlss
 for (i in 1:length(names(taxacom.zi.unc))){ #
   taxacom.zi.unc[[i]]<-as.data.frame(taxacom.zi.unc[[i]])
@@ -2738,6 +2807,17 @@ names(pathcom.zi.nohav)<-paste("l",2:3,sep="")
 # metaanalysis for gamlss
 pathmetatab.zi.nohav<-meta.taxa(taxcomdat=pathcom.zi.nohav, sm="RR",p.adjust.method="fdr",percent.meta=0.5,pool.var="path")
 #save(pathcom.zi.nounc,pathmetatab.zi.nounc,pathcom.zi.noha,pathmetatab.zi.noha,pathcom.zi.nohav,pathmetatab.zi.nohav,file="C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/pathmetatab.zi.sen.rda")
+
+
+# Meta-analysis for 4 studies with gender info but adjusting only for age (not gender): for comparison
+taxacom.zi.l2<-rbind.fill(taxacom.zi.rm$l2,taxacom.zi.ha$l2,taxacom.zi.unc$l2,taxacom.zi.usbmk$l2)
+taxacom.zi.l3<-rbind.fill(taxacom.zi.rm$l3,taxacom.zi.ha$l3,taxacom.zi.unc$l3,taxacom.zi.usbmk$l3)
+pathcom.zi.4<-list(taxacom.zi.l2,taxacom.zi.l3)
+names(pathcom.zi.4)<-paste("l",2:3,sep="")
+# metaanalysis for gamlss
+pathmetatab.zi.4<-meta.taxa(taxcomdat=pathcom.zi.4, sm="RR",p.adjust.method="fdr",percent.meta=0.5,pool.var="path")
+#save(pathcom.zi.4,pathmetatab.zi.4,file="C:/Users/nth2111/My files/Dr Kuhn/Microbiome/Rprac/analysis/data/pathmetatab.4.rda")
+
 
 
 #gender adjusted for bf and age (generic function)

@@ -144,14 +144,14 @@ taxa.filter<-function(taxtab, percent.filter=0.05, relabund.filter=0.00005){
 }
 
 
-#compare taxa summary tables at all levels for either relative or absolute abundance using different methods
-#author: Nhan Ho (June 2017)
+#compare taxa summary tables at all levels for relative abundance using different methods
+#author: Nhan Ho (June 2017, add transformation June 2018)
 taxa.compare<-function(taxtab,taxsum="rel",propmed.rel="gamlss",comvar="bf",adjustvar="age.sample",longitudinal="yes",p.adjust.method="fdr",percent.filter=0.05,relabund.filter=0.00005,pooldata=FALSE,max.lev=6,...){
-  #taxsum can choose "rel" or "abs"; propmed.rel can choose "lm" or "gamlss" or "zibr" this is only applicable for relative abundance
+  #propmed.rel can choose "lm" or "gamlss" this is only applicable for relative abundance
   #apply to taxa summary table already merged to mapping file
   #max.lev=6 (genus), or 7 (species)
   #comvar need to be a factor
-  sapply(c("lme4","sjmisc", "sjPlot", "lmerTest","glmmADMB", "pscl", "MASS", "boot","betareg", "gamlss","gdata","ZIBR"), require, character.only = TRUE) 
+  sapply(c("lme4","sjmisc", "sjPlot", "lmerTest","glmmADMB", "pscl", "MASS", "boot","betareg", "gamlss","gdata","ZIBR","zCompositions","compositions"), require, character.only = TRUE) 
   taxlev<-paste("l",2:(length(taxtab)+1),sep="")
   estisum<-list()
   for (j in 1:length(taxlev)){
@@ -172,6 +172,46 @@ taxa.compare<-function(taxtab,taxsum="rel",propmed.rel="gamlss",comvar="bf",adju
     taxtestm<-apply(taxdat[,taxlist],2,mean,na.rm=T)
     taxgetm<-taxtestm[taxtestm>relabund.filter]
     taxname<-names(taxget)[names(taxget) %in% names(taxgetm)]
+    
+    #transformation of relative abundance
+    if (propmed.rel=="gamlss" &transform!="none"){
+      stop("gamlss with beta zero-inflated family should only be used for relative abundance without transformation")
+    }
+    if (transform!="clr" &zeroreplace.method!="none"){
+      stop("Zero replacement is only implemented for use with CLR transformation")
+    }
+    if (transform=="clr" &zeroreplace.method=="none"){
+      stop("Zero replacement needs to be done before CLR transformation")
+    }
+    if (propmed.rel=="lm" &transform=="asin.sqrt"){
+      asintransform <- function(p) { asin(sqrt(p)) }
+      taxdat[,taxname]<-apply(taxdat[,taxname],2,asintransform)
+    }
+    if (propmed.rel=="lm" &transform=="logit"){
+      logittransform <- function(p) { log(p/(1-p)) }
+      taxdat[,taxname]<-apply(taxdat[,taxname],2,logittransform )
+    }
+    if (propmed.rel=="lm" &transform=="clr"){
+      #zero replacement using package zCompositions
+      if (zeroreplace.method=="multLN"){
+        test0<-zCompositions::multLN(taxdat[,taxname],label=0,dl=rep(1,length(taxname)))
+      }
+      if (zeroreplace.method=="multKM"){
+        test0<-zCompositions::multKM(taxdat[,taxname],label=0,dl=rep(1,length(taxname)))
+      }
+      if (zeroreplace.method=="multRepl"){
+        test0<-zCompositions::multRepl(taxdat[,taxname],label=0,dl=rep(1,length(taxname)))
+      }
+      if (zeroreplace.method=="lrEM"){
+        test0<-zCompositions::lrEM(taxdat[,taxname],label=0,dl=rep(1,length(taxname)))
+      }
+      if (zeroreplace.method=="lrDA"){
+        test0<-zCompositions::lrDA(taxdat[,taxname],label=0,dl=rep(1,length(taxname)))
+      }
+      #CLR transformation of imputed data using package compositions
+      clrdat<-as.data.frame(clr(test0))
+      taxdat[,taxname]<-clrdat
+    }
     estisum[[j]]<-matrix(NA,nrow=length(taxname),ncol=20)
     colnames(estisum[[j]])<-c("estimate.nebf","se.nebf","teststat.nebf","pval.nebf","pval.adjust.nebf",
                               "estimate.nbf","se.nbf","teststat.nbf","pval.nbf","pval.adjust.nbf",
@@ -314,7 +354,6 @@ taxa.compare<-function(taxtab,taxsum="rel",propmed.rel="gamlss",comvar="bf",adju
 
 # taxa summary for mean, sd, number of subjects by age in months rounded
 # Author: Nhan Ho (July, 2017)
-# taxtab must be specified: bf as factor variable for breastfeeding status, age.sample for infant age at sample collection
 taxa.meansdn<-function(taxtab, sumvar="bf", groupvar="age.sample",percent.filter=0.05,othervar="none"){
   # taxtab must be specified: bf as factor variable for breastfeeding status, age.sample for infant age at sample collection
   #max.lev=6 (genus), or 7 (species) ,max.lev=6
@@ -555,7 +594,7 @@ taxa.mean.plot<-function(tabmean,sumvar="taxa",tax.select="none",taxlist="none",
       scale_fill_manual(values=col_vector)+ xlab(xlab)+ylab(ylab)+
       labs(fill='')+
       theme(legend.position = legend.position)+
-      theme(legend.text = element_text(colour="black", size = 8))+
+      theme(legend.text = element_text(colour="black", size = 10, face="bold"))+
       scale_x_continuous(breaks=seq(from=0,to=24,by=3),
                          labels=seq(from=0,to=24,by=3))+
       theme(legend.key.size = unit(0.5, "cm"),
@@ -564,7 +603,11 @@ taxa.mean.plot<-function(tabmean,sumvar="taxa",tax.select="none",taxlist="none",
             panel.grid.minor = element_blank(),
             panel.border = element_blank(),
             panel.background = element_blank(),
-            strip.background =element_rect(fill="white"))+
+            strip.background =element_rect(fill="white"),
+            axis.text.y =element_text(size=10, colour = "black",face="bold"),
+            axis.text.x =element_text(size=10,face="bold",colour="black"),
+            axis.title=element_text(size=10,face="bold"),
+            strip.text.x = element_text(size=10, face="bold"))+
       guides(fill=guide_legend(ncol=1)) +
       facet_wrap(~get(as.character(comvar)), ncol = 1)
       #facet_grid(get(as.character(comvar))~ .)
@@ -574,7 +617,7 @@ taxa.mean.plot<-function(tabmean,sumvar="taxa",tax.select="none",taxlist="none",
     p<-ggplot(tab.l, aes(x = get(as.character(comvar)), y = rel_abund, fill = taxa)) +
       geom_bar(stat = "identity")+ scale_fill_manual(values=col_vector)+ xlab(comvar)+ylab(ylab)+
       labs(fill='')+ guides(fill=guide_legend(ncol=1))+
-      theme(legend.text = element_text(colour="black", size = 8))+
+      theme(legend.text = element_text(colour="black", size = 10,face="bold"))+
       theme(legend.position = legend.position)+
       theme(legend.key.size = unit(0.5, "cm"),
             axis.line = element_line(colour = "black"),
@@ -582,7 +625,11 @@ taxa.mean.plot<-function(tabmean,sumvar="taxa",tax.select="none",taxlist="none",
             panel.grid.minor = element_blank(),
             panel.border = element_blank(),
             panel.background = element_blank(),
-            strip.background =element_rect(fill="white"))+
+            strip.background =element_rect(fill="white"),
+            axis.text.y =element_text(size=10, colour = "black",face="bold"),
+            axis.text.x =element_text(size=10,face="bold",colour="black"),
+            axis.title=element_text(size=10,face="bold"),
+            strip.text.x = element_text(size=10, face="bold"))+
       guides(fill=guide_legend(ncol=1)) +
       facet_wrap(~get(as.character(groupvar)), ncol = 1)
       #facet_grid(get(as.character(groupvar))~ .)
@@ -594,8 +641,8 @@ taxa.mean.plot<-function(tabmean,sumvar="taxa",tax.select="none",taxlist="none",
 
 # show taxacom table
 # author: Nhan Ho (August 2017)
-taxcomtab.show<-function(taxcomtab, tax.lev="l2",tax.select="none",showvar=".nebf",p.adjust.method="fdr",p.cutoff=0.05,...){
-  test<-taxcomtab[[tax.lev]][,1:4]
+taxcomtab.show<-function(taxcomtab, tax.lev="l2",tax.select="none",showvar=".nebf",readjust.p=FALSE,p.adjust.method="fdr",p.cutoff.type="pval",p.cutoff=0.05,digit=2,p.digit=4,...){
+  test<-taxcomtab[[tax.lev]][,1:5]
   colnames(test)<-gsub(".nebf","",colnames(test))
   if (showvar==".age"){
     test<-taxcomtab[[tax.lev]][,colnames(taxcomtab[[tax.lev]])[grep(".age",colnames(taxcomtab[[tax.lev]]))]]
@@ -622,13 +669,17 @@ taxcomtab.show<-function(taxcomtab, tax.lev="l2",tax.select="none",showvar=".neb
     taxuse<-taxuse[taxuse %in% tax.select]
   }
   datuse<-as.data.frame(test[taxuse,])
-  datuse[,"pval.adjust"]<-p.adjust(datuse[,"pval"], method = p.adjust.method)
+  if (readjust.p==TRUE){
+    datuse[,"pval.adjust"]<-p.adjust(datuse[,"pval"], method = p.adjust.method)
+  }
   rownames(datuse)<-gsub("k__bacteria.p__","",rownames(datuse))
   datuse<-as.data.frame(datuse)
-  datsig<-datuse[datuse[,"pval"]<p.cutoff,]
-  datsig<-datsig[order(datsig[,"pval"]),]
+  datsig<-datuse[datuse[,p.cutoff.type]<p.cutoff,]
+  datsig<-datsig[order(datsig[,p.cutoff.type]),]
   datsig[,"ll"]<-datsig[,"estimate"]-1.96*datsig[,"se"]
   datsig[,"ul"]<-datsig[,"estimate"]+1.96*datsig[,"se"]
+  datsig[,c("estimate","ll","ul")]<-round(datsig[,c("estimate","ll","ul")],digit)
+  datsig[,c("pval","pval.adjust")]<-round(datsig[,c("pval","pval.adjust")],p.digit)
   return(datsig)
 }
 
@@ -636,7 +687,7 @@ taxcomtab.show<-function(taxcomtab, tax.lev="l2",tax.select="none",showvar=".neb
 
 # display meta-analysis results of taxa relative abundance
 #author: Nhan Ho (Aug 2017)
-metatab.show<-function(metatab,taxacom.pooled.tab,sumvar="taxa",tax.lev="l2",showvar=".nebf",readjust.p=FALSE,p.cutoff.type="p", p.cutoff=0.05,display="plot",plot="heatmap",fill.value="log(OR)",grid=FALSE){
+metatab.show<-function(metatab,taxacom.pooled.tab,sumvar="taxa",tax.lev="l2",showvar=".nebf",readjust.p=FALSE,p.cutoff.type="p", p.cutoff=0.05,display="plot",plot="heatmap",fill.value="log(OR)",grid=FALSE,digit=2,p.digit=4){
   #p.cutoff.type=c("p","p.adjust")
   #display=c("plot","table","data")
   #plot=c("heatmap","forest")
@@ -912,6 +963,8 @@ metatab.show<-function(metatab,taxacom.pooled.tab,sumvar="taxa",tax.lev="l2",sho
   }
   if (display=="table"){
     taxsigo<-taxsig[order(taxsig[,paste(p.cutoff.type,showvar,sep="")]), colnames(taxsig)[grep(showvar,colnames(taxsig))]]
+    taxsigo[,paste(c('estimate','ll','ul'),showvar,sep="")]<-round(taxsigo[,paste(c('estimate','ll','ul'),showvar,sep="")],digit)
+    taxsigo[,paste(c('p','p.adjust'),showvar,sep="")]<-round(taxsigo[,paste(c('p','p.adjust'),showvar,sep="")],p.digit)
     return(taxsigo)
   }
   if (display=="data"){
@@ -1112,7 +1165,7 @@ pathway.compare<-function(pathtab,mapfile,sampleid="sampleid",pathsum="rel",stat
 
 # Function to produce nice combined heatmap and forest plot for taxa and pathway relative abundance
 #Author: Nhan Ho (Dec 2017)
-meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust="p.adjust.nebf",phyla.col=c("select","rainbow"),leg.key.size=1,leg.text.size=8,heat.text.x.size=8,heat.text.x.angle=0,forest.axis.text.y=8,forest.axis.text.x=8){
+meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust="p.adjust.nebf",phyla.col=c("select","rainbow"),forest.col="by.pvalue",heat.forest.width.ratio = c(1,1),leg.key.size=1,leg.text.size=8,heat.text.x.size=8,heat.text.x.angle=0,forest.axis.text.y=8,forest.axis.text.x=8,point.ratio=c(3,1),line.ratio=c(2,1)){
   #sumtype=c("taxa","path")
   #level=c("main","sub")
   #phyla.col=c("select","rainbow")
@@ -1121,15 +1174,15 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
   #test$taxa<-test$id
   if (sumtype=="taxa"){
     test$esticat<-cut(test$estimate, breaks=c(-Inf, -1,-0.5,-0.1,0,0.1,0.5,1, Inf),
-                      labels=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[01,0.5)", "[0.5,1)", ">=1"))
-    test$esticol<-mapvalues(test$esticat,from=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[01,0.5)", "[0.5,1)", ">=1"),
-                            to=c("#006d2c", "#2ca25f", "#66c2a4","#b2e2e2", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
+                      labels=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[0.1,0.5)", "[0.5,1)", ">=1"))
+    test$esticol<-mapvalues(test$esticat,from=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[0.1,0.5)", "[0.5,1)", ">=1"),
+                            to=c("#045a8d", "#2b8cbe", "#74a9cf","#bdc9e1", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
   }
   if (sumtype=="path"){
     test$esticat<-cut(test$estimate, breaks=c(-Inf, -0.5,-0.1,-0.05,0,0.05,0.1,0.5, Inf),
                       labels=c("<-0.5)", "[-0.5,-0.1)","[-0.1,-0.05)","[-0.05,0)","[0,0.05)","[0.05,0.1)", "[0.1,0.5)", ">=0.5"))
     test$esticol<-mapvalues(test$esticat,from=c("<-0.5)", "[-0.5,-0.1)","[-0.1,-0.05)","[-0.05,0)","[0,0.05)","[0.05,0.1)", "[0.1,0.5)", ">=0.5"),
-                            to=c("#006d2c", "#2ca25f", "#66c2a4","#b2e2e2", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
+                            to=c("#045a8d", "#2b8cbe", "#74a9cf","#bdc9e1", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
   }
   test$esticat<-drop.levels(test$esticat, reorder=FALSE)
   test$esticol<-drop.levels(test$esticol, reorder=FALSE)
@@ -1167,8 +1220,8 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
     #scale_y_discrete(limits = rev(levels(test$taxas)))+
     geom_segment(data=my.lines, aes(x,y,xend=xend, yend=yend), size=2, inherit.aes=F)+
     ylab("") +xlab("")+
-    theme(legend.title = element_text(size = 10),
-          legend.text = element_text(size = leg.text.size),
+    theme(legend.title = element_text(size = 12,face="bold"),
+          legend.text = element_text(size = leg.text.size,face="bold"),
           plot.title = element_text(size=16),
           axis.title=element_text(size=14,face="bold"),
           #axis.text.x = element_text(angle = 45, hjust = 1),
@@ -1182,7 +1235,7 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
           axis.text.y = element_blank(),
           axis.title.x = element_blank(),
           axis.title.y = element_blank(),
-          axis.text.x =element_text(size=heat.text.x.size, angle=heat.text.x.angle, hjust = 1),
+          axis.text.x =element_text(size=heat.text.x.size, angle=heat.text.x.angle, hjust = 1,face="bold",colour="black"),
           legend.key.size = unit(leg.key.size, "cm"))+
     guides(fill=guide_legend(ncol=1))
   testf<-metadat$taxsig
@@ -1211,7 +1264,8 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
       testf$taxas2<-sub(".*f__", "",as.character(testf$taxa))
       testf$taxas2<-paste0(toupper(substr(as.character(testf$taxas2), 1, 1)), substr(as.character(testf$taxas2), 2, nchar(as.character(testf$taxas2))))
       #replace empty truncated names by original names
-      testf$taxas2[testf$taxas2 %in% c("",".g__")]<-testf$taxa[testf$taxas2 %in% c("",".g__")]
+      oname<-as.character(testf$taxa[testf$taxas2 %in% c("",".g__")])
+      testf$taxas2[testf$taxas2 %in% c("",".g__")]<-paste0(toupper(substr(as.character(oname), 1, 1)), substr(as.character(oname), 2, nchar(as.character(oname))))
       testf<-testf[order(testf$taxa,decreasing = FALSE),]
       testf$taxas<-factor(testf$taxas2,levels=testf$taxas2)
       testf$phylum<-sub(".c__.*", "",as.character(testf$taxa))
@@ -1237,16 +1291,33 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
   testf$pcut<-testf[,p]
   testf$p.adjustcut<-testf[,p.adjust]
   testf$psig<-cut(testf$pcut, breaks=c(0,0.05,1),include.lowest = TRUE, right = FALSE)
+  testf$psigsize<-mapvalues(testf$psig,from=c("[0,0.05)","[0.05,1]"), to=point.ratio)
+  testf$psigsize2<-mapvalues(testf$psig,from=c("[0,0.05)","[0.05,1]"), to=line.ratio)
   testf$padjustsig<-cut(testf$p.adjustcut, breaks=c(0,0.1,1),include.lowest = TRUE, right = FALSE)
   testf$estimate<-as.numeric(as.character(testf$estimate))
   testf$padjustsign<-mapvalues(testf$padjustsig,from=c("[0,0.1)","[0.1,1]"),to=c("17","16"))
-  testf$padjustsize<-mapvalues(testf$padjustsig,from=c("[0,0.1)","[0.1,1]"),to=c("2","1"))
+  testf$padjustsize<-mapvalues(testf$padjustsig,from=c("[0,0.1)","[0.1,1]"),to=c("4","2"))
+  if (sumtype=="taxa"){
+    testf$esticat<-cut(testf$estimate, breaks=c(-Inf, -1,-0.5,-0.1,0,0.1,0.5,1, Inf),
+                      labels=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[0.1,0.5)", "[0.5,1)", ">=1"))
+    testf$esticol<-mapvalues(testf$esticat,from=c("<-1", "[-1,-0.5)","[-0.5,-0.1)","[-0.1,0)", "[0,0.1)", "[0.1,0.5)", "[0.5,1)", ">=1"),
+                            to=c("#045a8d", "#2b8cbe", "#74a9cf","#bdc9e1", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
+  }
+  if (sumtype=="path"){
+    testf$esticat<-cut(testf$estimate, breaks=c(-Inf, -0.5,-0.1,-0.05,0,0.05,0.1,0.5, Inf),
+                      labels=c("<-0.5)", "[-0.5,-0.1)","[-0.1,-0.05)","[-0.05,0)","[0,0.05)","[0.05,0.1)", "[0.1,0.5)", ">=0.5"))
+    testf$esticol<-mapvalues(testf$esticat,from=c("<-0.5)", "[-0.5,-0.1)","[-0.1,-0.05)","[-0.05,0)","[0,0.05)","[0.05,0.1)", "[0.1,0.5)", ">=0.5"),
+                            to=c("#045a8d", "#2b8cbe", "#74a9cf","#bdc9e1", "#fecc5c","#fd8d3c", "#f03b20","#bd0026"))
+  }
+  testf$esticat<-drop.levels(testf$esticat, reorder=FALSE)
+  testf$esticol<-drop.levels(testf$esticol, reorder=FALSE)
   # dirty truncate large estimate, LL and UL for better plot view
   testf[,c("estimate","ll","ul")]<-apply(testf[,c("estimate","ll","ul")],2,function(x){x[x>=5]=5;x[x<=-5]=-5;x})
-  f<-ggplot(data=testf,aes(x=estimate,y=plotvar,colour=psig))+
+  if (forest.col=="by.pvalue"){
+    f<- ggplot(data=testf,aes(x=estimate,y=plotvar,colour=psig))+
       geom_point(shape=as.numeric(as.character(testf$padjustsign)),size=as.numeric(as.character(testf$padjustsize)))+
-      scale_y_discrete(position = "right")+ #,limits = rev(levels(testf$taxa2))
-      geom_errorbarh(aes(xmin=ll,xmax=ul,colour=psig),height=0.0)+
+      scale_y_discrete(position = "right")+ #limits = rev(levels(testf$taxa2))
+      geom_errorbarh(aes(xmin=ll,xmax=ul,colour=psig),height=0.0,size=1)+
       geom_vline(xintercept=0,linetype="dashed")+
       scale_colour_manual(breaks=testf$psig,values = c("red", "black"))+
       theme(legend.position="none",
@@ -1254,9 +1325,25 @@ meta.niceplot<-function(metadat,sumtype="taxa",level="main",p="p.nebf",p.adjust=
             panel.background = element_blank(),
             axis.ticks.y= element_blank(),
             axis.title = element_blank(),
-            axis.text.y =element_text(size=forest.axis.text.y, colour = testf$colp),
-            axis.text.x =element_text(size=forest.axis.text.x))
-  return(grid.arrange(h,f,nrow=1))
+            axis.text.y =element_text(size=forest.axis.text.y, colour = testf$colp,face="bold"),
+            axis.text.x =element_text(size=forest.axis.text.x,face="bold",colour="black"))
+  }
+  if (forest.col=="by.estimate"){
+    f<- ggplot(data=testf,aes(x=estimate,y=plotvar,colour=esticol))+
+      geom_point(shape=as.numeric(as.character(testf$padjustsign)),size=as.numeric(as.character(testf$psigsize)))+
+      scale_y_discrete(position = "right")+ #,limits = rev(levels(testf$taxa2))
+      geom_errorbarh(aes(xmin=ll,xmax=ul,colour=esticol),height=0.0, size=as.numeric(as.character(testf$psigsize2)))+
+      geom_vline(xintercept=0,linetype="dashed")+
+      scale_colour_manual(breaks=testf$esticol,values = levels(testf$esticol))+
+      theme(legend.position="none",
+            plot.background = element_blank(),
+            panel.background = element_blank(),
+            axis.ticks.y= element_blank(),
+            axis.title = element_blank(),
+            axis.text.y =element_text(size=forest.axis.text.y, colour = testf$colp,face="bold"),
+            axis.text.x =element_text(size=forest.axis.text.x,face="bold",colour="black"))
+  }
+  return(grid.arrange(h,f,nrow=1,widths = heat.forest.width.ratio))
 }
 
 # Function for microbiome age
