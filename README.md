@@ -1,4 +1,4 @@
-This repository contains the R code and data to reproduce all the analyses and results for the project "Effects of exclusive breastfeeding on infant gut microbiota: a meta-analysis across studies and populations" (publihed in Nature Comm: https://www.nature.com/articles/s41467-018-06473-x). 
+This repository contains the R code and data to reproduce all the analyses and results for the paper "Meta-analysis of effects of exclusive breastfeeding on infant gut microbiota across populations" (published in Nature Comm: https://www.nature.com/articles/s41467-018-06473-x). 
 
 It contains:    
  
